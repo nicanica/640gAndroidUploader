@@ -2,7 +2,6 @@ package info.nightscout.android.upload.nightscout;
 
 import retrofit2.Call;
 import retrofit2.http.GET;
-
 /**
  * Created by lgoedhart on 26/06/2016.
  */
@@ -28,6 +27,6 @@ public interface NightscoutApi {
     @GET("/api/v1/status.json")
     Call<SiteStatus> getStatus();
 
-    @GET("/api/v1/experiments/test")
+    @GET("/api/v1/experiments/update")
     Call<LoginStatus> testLogin();
 }
