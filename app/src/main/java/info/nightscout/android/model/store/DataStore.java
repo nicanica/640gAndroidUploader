@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import java.util.Date;
 
 import info.nightscout.android.R;
+import info.nightscout.android.utils.FormatKit;
 import io.realm.RealmObject;
 
 public class DataStore extends RealmObject {
@@ -19,6 +20,7 @@ public class DataStore extends RealmObject {
     private boolean nightscoutInitCleanup;
     private long nightscoutCgmCleanFrom;
     private long nightscoutPumpCleanFrom;
+    private long nightscoutCleanTimestamp;
     private long nightscoutAlwaysUpdateTimestamp; // items for upload will always update prior to this time
 
     private boolean nightscoutUpload;
@@ -138,6 +140,7 @@ public class DataStore extends RealmObject {
     private int nsAlarmTTL;
     private boolean nsEnableDailyTotals;
     private boolean nsEnableFormatHTML;
+    private boolean nsEnableMedtronicTrendStyle;
 
     private boolean urchinEnable;
     private int urchinBasalPeriod;
@@ -357,12 +360,12 @@ public class DataStore extends RealmObject {
             }
             if (nsEnableBolusTreatments != getBoolean(c, p, R.string.key_nsEnableBolusTreatments, R.bool.default_nsEnableBolusTreatments)
                     || nsGramsPerExchange != getInt(c, p, R.string.key_nsGramsPerExchange, R.string.default_nsGramsPerExchange)
-                    ) {
+            ) {
                 resendPumpHistoryBolus = true;
             }
             if (nsEnableFingerBG != getBoolean(c, p, R.string.key_nsEnableFingerBG, R.bool.default_nsEnableFingerBG)
                     || nsEnableCalibrationInfo != getBoolean(c, p, R.string.key_nsEnableCalibrationInfo, R.bool.default_nsEnableCalibrationInfo)
-                    ) {
+            ) {
                 resendPumpHistoryBG = true;
                 resendPumpHistoryMisc = true;
             }
@@ -376,12 +379,12 @@ public class DataStore extends RealmObject {
                     || nsEnableLifetimes != getBoolean(c, p, R.string.key_nsEnableLifetimes, R.bool.default_nsEnableLifetimes)
                     || nsCannulaChangeThreshold != getInt(c, p, R.string.key_nsCannulaChangeThreshold, R.string.default_nsCannulaChangeThreshold)
                     || nsInsulinChangeThreshold != getInt(c, p, R.string.key_nsInsulinChangeThreshold, R.string.default_nsInsulinChangeThreshold)
-                    ) {
+            ) {
                 resendPumpHistoryMisc = true;
             }
             if (nsActiveInsulinTime != getFloat(c, p, R.string.key_nsActiveInsulinTime, R.string.default_nsActiveInsulinTime)
                     || nsProfileDefault != getInt(c, p, R.string.key_nsProfileDefault, R.string.default_nsProfileDefault)
-                    ) {
+            ) {
                 requestProfile = true;
             }
             if (nsAlarmExtended != getBoolean(c, p, R.string.key_nsAlarmExtended, R.bool.default_nsAlarmExtended)
@@ -390,14 +393,14 @@ public class DataStore extends RealmObject {
                     || nsSystemStatusConnection != getBoolean(c, p, R.string.key_nsSystemStatusConnection, R.bool.default_nsSystemStatusConnection)
                     || nsSystemStatusBatteryLow != getBoolean(c, p, R.string.key_nsSystemStatusBatteryLow, R.bool.default_nsSystemStatusBatteryLow)
                     || nsSystemStatusBatteryCharged != getBoolean(c, p, R.string.key_nsSystemStatusBatteryCharged, R.bool.default_nsSystemStatusBatteryCharged)
-                    ) {
+            ) {
                 resendPumpHistoryAlarm = true;
             }
             if (nsSystemStatusUsbErrors != getBoolean(c, p, R.string.key_nsSystemStatusUsbErrors, R.bool.default_nsSystemStatusUsbErrors)
                     || nsSystemStatusConnection != getBoolean(c, p, R.string.key_nsSystemStatusConnection, R.bool.default_nsSystemStatusConnection)
                     || nsSystemStatusBatteryLow != getBoolean(c, p, R.string.key_nsSystemStatusBatteryLow, R.bool.default_nsSystemStatusBatteryLow)
                     || nsSystemStatusBatteryCharged != getBoolean(c, p, R.string.key_nsSystemStatusBatteryCharged, R.bool.default_nsSystemStatusBatteryCharged)
-                    ) {
+            ) {
                 resendPumpHistorySystem = true;
             }
             if (nsEnableDailyTotals != getBoolean(c, p, R.string.key_nsEnableDailyTotals, R.bool.default_nsEnableDailyTotals)) {
@@ -406,38 +409,38 @@ public class DataStore extends RealmObject {
             if (nsEnablePatternChange != getBoolean(c, p, R.string.key_nsEnablePatternChange, R.bool.default_nsEnablePatternChange)) {
                 resendPumpHistoryPattern = true;
             }
-            if (!nameBasalPattern1.equals(getString(c, p, R.string.key_nameBasalPattern1, R.string.default_nameBasalPattern1))
-                    || !nameBasalPattern2.equals(getString(c, p, R.string.key_nameBasalPattern2, R.string.default_nameBasalPattern2))
-                    || !nameBasalPattern3.equals(getString(c, p, R.string.key_nameBasalPattern3, R.string.default_nameBasalPattern3))
-                    || !nameBasalPattern4.equals(getString(c, p, R.string.key_nameBasalPattern4, R.string.default_nameBasalPattern4))
-                    || !nameBasalPattern5.equals(getString(c, p, R.string.key_nameBasalPattern5, R.string.default_nameBasalPattern5))
-                    || !nameBasalPattern6.equals(getString(c, p, R.string.key_nameBasalPattern6, R.string.default_nameBasalPattern6))
-                    || !nameBasalPattern7.equals(getString(c, p, R.string.key_nameBasalPattern7, R.string.default_nameBasalPattern7))
-                    || !nameBasalPattern8.equals(getString(c, p, R.string.key_nameBasalPattern8, R.string.default_nameBasalPattern8))
-                    ) {
+            if (!nameBasalPattern1.equals(p.getString(c.getString(R.string.key_nameBasalPatternP1), ""))
+                    || !nameBasalPattern2.equals(p.getString(c.getString(R.string.key_nameBasalPatternP2), ""))
+                    || !nameBasalPattern3.equals(p.getString(c.getString(R.string.key_nameBasalPatternP3), ""))
+                    || !nameBasalPattern4.equals(p.getString(c.getString(R.string.key_nameBasalPatternP4), ""))
+                    || !nameBasalPattern5.equals(p.getString(c.getString(R.string.key_nameBasalPatternP5), ""))
+                    || !nameBasalPattern6.equals(p.getString(c.getString(R.string.key_nameBasalPatternP6), ""))
+                    || !nameBasalPattern7.equals(p.getString(c.getString(R.string.key_nameBasalPatternP7), ""))
+                    || !nameBasalPattern8.equals(p.getString(c.getString(R.string.key_nameBasalPatternP8), ""))
+            ) {
                 resendPumpHistoryPattern = true;
                 requestProfile = true;
             }
-            if (!nameTempBasalPreset1.equals(getString(c, p, R.string.key_nameTempBasalPreset1, R.string.default_nameTempBasalPreset1))
-                    || !nameTempBasalPreset2.equals(getString(c, p, R.string.key_nameTempBasalPreset2, R.string.default_nameTempBasalPreset2))
-                    || !nameTempBasalPreset3.equals(getString(c, p, R.string.key_nameTempBasalPreset3, R.string.default_nameTempBasalPreset3))
-                    || !nameTempBasalPreset4.equals(getString(c, p, R.string.key_nameTempBasalPreset4, R.string.default_nameTempBasalPreset4))
-                    || !nameTempBasalPreset5.equals(getString(c, p, R.string.key_nameTempBasalPreset5, R.string.default_nameTempBasalPreset5))
-                    || !nameTempBasalPreset6.equals(getString(c, p, R.string.key_nameTempBasalPreset6, R.string.default_nameTempBasalPreset6))
-                    || !nameTempBasalPreset7.equals(getString(c, p, R.string.key_nameTempBasalPreset7, R.string.default_nameTempBasalPreset7))
-                    || !nameTempBasalPreset8.equals(getString(c, p, R.string.key_nameTempBasalPreset8, R.string.default_nameTempBasalPreset8))
-                    ) {
+            if (!nameTempBasalPreset1.equals(p.getString(c.getString(R.string.key_nameTempBasalPresetP1), ""))
+                    || !nameTempBasalPreset2.equals(p.getString(c.getString(R.string.key_nameTempBasalPresetP2), ""))
+                    || !nameTempBasalPreset3.equals(p.getString(c.getString(R.string.key_nameTempBasalPresetP3), ""))
+                    || !nameTempBasalPreset4.equals(p.getString(c.getString(R.string.key_nameTempBasalPresetP4), ""))
+                    || !nameTempBasalPreset5.equals(p.getString(c.getString(R.string.key_nameTempBasalPresetP5), ""))
+                    || !nameTempBasalPreset6.equals(p.getString(c.getString(R.string.key_nameTempBasalPresetP6), ""))
+                    || !nameTempBasalPreset7.equals(p.getString(c.getString(R.string.key_nameTempBasalPresetP7), ""))
+                    || !nameTempBasalPreset8.equals(p.getString(c.getString(R.string.key_nameTempBasalPresetP8), ""))
+            ) {
                 resendPumpHistoryBasal = true;
             }
-            if (!nameBolusPreset1.equals(getString(c, p, R.string.key_nameBolusPreset1, R.string.default_nameBolusPreset1))
-                    || !nameBolusPreset2.equals(getString(c, p, R.string.key_nameBolusPreset2, R.string.default_nameBolusPreset2))
-                    || !nameBolusPreset3.equals(getString(c, p, R.string.key_nameBolusPreset3, R.string.default_nameBolusPreset3))
-                    || !nameBolusPreset4.equals(getString(c, p, R.string.key_nameBolusPreset4, R.string.default_nameBolusPreset4))
-                    || !nameBolusPreset5.equals(getString(c, p, R.string.key_nameBolusPreset5, R.string.default_nameBolusPreset5))
-                    || !nameBolusPreset6.equals(getString(c, p, R.string.key_nameBolusPreset6, R.string.default_nameBolusPreset6))
-                    || !nameBolusPreset7.equals(getString(c, p, R.string.key_nameBolusPreset7, R.string.default_nameBolusPreset7))
-                    || !nameBolusPreset8.equals(getString(c, p, R.string.key_nameBolusPreset8, R.string.default_nameBolusPreset8))
-                    ){
+            if (!nameBolusPreset1.equals(p.getString(c.getString(R.string.key_nameBolusPresetP1), ""))
+                    || !nameBolusPreset2.equals(p.getString(c.getString(R.string.key_nameBolusPresetP2), ""))
+                    || !nameBolusPreset3.equals(p.getString(c.getString(R.string.key_nameBolusPresetP3), ""))
+                    || !nameBolusPreset4.equals(p.getString(c.getString(R.string.key_nameBolusPresetP4), ""))
+                    || !nameBolusPreset5.equals(p.getString(c.getString(R.string.key_nameBolusPresetP5), ""))
+                    || !nameBolusPreset6.equals(p.getString(c.getString(R.string.key_nameBolusPresetP6), ""))
+                    || !nameBolusPreset7.equals(p.getString(c.getString(R.string.key_nameBolusPresetP7), ""))
+                    || !nameBolusPreset8.equals(p.getString(c.getString(R.string.key_nameBolusPresetP8), ""))
+            ){
                 resendPumpHistoryBolus = true;
             }
         }
@@ -478,32 +481,33 @@ public class DataStore extends RealmObject {
         nsAlarmTTL = getInt(c, p, R.string.key_nsAlarmTTL, R.string.default_nsAlarmTTL);
         nsEnableDailyTotals = getBoolean(c, p, R.string.key_nsEnableDailyTotals, R.bool.default_nsEnableDailyTotals);
         nsEnableFormatHTML = getBoolean(c, p, R.string.key_nsEnableFormatHTML, R.bool.default_nsEnableFormatHTML);
+        nsEnableMedtronicTrendStyle = getBoolean(c, p, R.string.key_nsEnableMedtronicTrendStyle, R.bool.default_nsEnableMedtronicTrendStyle);
         nsGramsPerExchange = getInt(c, p, R.string.key_nsGramsPerExchange, R.string.default_nsGramsPerExchange);
 
-        nameBasalPattern1 = getString(c, p, R.string.key_nameBasalPattern1, R.string.default_nameBasalPattern1);
-        nameBasalPattern2 = getString(c, p, R.string.key_nameBasalPattern2, R.string.default_nameBasalPattern2);
-        nameBasalPattern3 = getString(c, p, R.string.key_nameBasalPattern3, R.string.default_nameBasalPattern3);
-        nameBasalPattern4 = getString(c, p, R.string.key_nameBasalPattern4, R.string.default_nameBasalPattern4);
-        nameBasalPattern5 = getString(c, p, R.string.key_nameBasalPattern5, R.string.default_nameBasalPattern5);
-        nameBasalPattern6 = getString(c, p, R.string.key_nameBasalPattern6, R.string.default_nameBasalPattern6);
-        nameBasalPattern7 = getString(c, p, R.string.key_nameBasalPattern7, R.string.default_nameBasalPattern7);
-        nameBasalPattern8 = getString(c, p, R.string.key_nameBasalPattern8, R.string.default_nameBasalPattern8);
-        nameTempBasalPreset1 = getString(c, p, R.string.key_nameTempBasalPreset1, R.string.default_nameTempBasalPreset1);
-        nameTempBasalPreset2 = getString(c, p, R.string.key_nameTempBasalPreset2, R.string.default_nameTempBasalPreset2);
-        nameTempBasalPreset3 = getString(c, p, R.string.key_nameTempBasalPreset3, R.string.default_nameTempBasalPreset3);
-        nameTempBasalPreset4 = getString(c, p, R.string.key_nameTempBasalPreset4, R.string.default_nameTempBasalPreset4);
-        nameTempBasalPreset5 = getString(c, p, R.string.key_nameTempBasalPreset5, R.string.default_nameTempBasalPreset5);
-        nameTempBasalPreset6 = getString(c, p, R.string.key_nameTempBasalPreset6, R.string.default_nameTempBasalPreset6);
-        nameTempBasalPreset7 = getString(c, p, R.string.key_nameTempBasalPreset7, R.string.default_nameTempBasalPreset7);
-        nameTempBasalPreset8 = getString(c, p, R.string.key_nameTempBasalPreset8, R.string.default_nameTempBasalPreset8);
-        nameBolusPreset1 = getString(c, p, R.string.key_nameBolusPreset1, R.string.default_nameBolusPreset1);
-        nameBolusPreset2 = getString(c, p, R.string.key_nameBolusPreset2, R.string.default_nameBolusPreset2);
-        nameBolusPreset3 = getString(c, p, R.string.key_nameBolusPreset3, R.string.default_nameBolusPreset3);
-        nameBolusPreset4 = getString(c, p, R.string.key_nameBolusPreset4, R.string.default_nameBolusPreset4);
-        nameBolusPreset5 = getString(c, p, R.string.key_nameBolusPreset5, R.string.default_nameBolusPreset5);
-        nameBolusPreset6 = getString(c, p, R.string.key_nameBolusPreset6, R.string.default_nameBolusPreset6);
-        nameBolusPreset7 = getString(c, p, R.string.key_nameBolusPreset7, R.string.default_nameBolusPreset7);
-        nameBolusPreset8 = getString(c, p, R.string.key_nameBolusPreset8, R.string.default_nameBolusPreset8);
+        nameBasalPattern1 = p.getString(c.getString(R.string.key_nameBasalPatternP1), "");
+        nameBasalPattern2 = p.getString(c.getString(R.string.key_nameBasalPatternP2), "");
+        nameBasalPattern3 = p.getString(c.getString(R.string.key_nameBasalPatternP3), "");
+        nameBasalPattern4 = p.getString(c.getString(R.string.key_nameBasalPatternP4), "");
+        nameBasalPattern5 = p.getString(c.getString(R.string.key_nameBasalPatternP5), "");
+        nameBasalPattern6 = p.getString(c.getString(R.string.key_nameBasalPatternP6), "");
+        nameBasalPattern7 = p.getString(c.getString(R.string.key_nameBasalPatternP7), "");
+        nameBasalPattern8 = p.getString(c.getString(R.string.key_nameBasalPatternP8), "");
+        nameTempBasalPreset1 = p.getString(c.getString(R.string.key_nameTempBasalPresetP1), "");
+        nameTempBasalPreset2 = p.getString(c.getString(R.string.key_nameTempBasalPresetP2), "");
+        nameTempBasalPreset3 = p.getString(c.getString(R.string.key_nameTempBasalPresetP3), "");
+        nameTempBasalPreset4 = p.getString(c.getString(R.string.key_nameTempBasalPresetP4), "");
+        nameTempBasalPreset5 = p.getString(c.getString(R.string.key_nameTempBasalPresetP5), "");
+        nameTempBasalPreset6 = p.getString(c.getString(R.string.key_nameTempBasalPresetP6), "");
+        nameTempBasalPreset7 = p.getString(c.getString(R.string.key_nameTempBasalPresetP7), "");
+        nameTempBasalPreset8 = p.getString(c.getString(R.string.key_nameTempBasalPresetP8), "");
+        nameBolusPreset1 = p.getString(c.getString(R.string.key_nameBolusPresetP1), "");
+        nameBolusPreset2 = p.getString(c.getString(R.string.key_nameBolusPresetP2), "");
+        nameBolusPreset3 = p.getString(c.getString(R.string.key_nameBolusPresetP3), "");
+        nameBolusPreset4 = p.getString(c.getString(R.string.key_nameBolusPresetP4), "");
+        nameBolusPreset5 = p.getString(c.getString(R.string.key_nameBolusPresetP5), "");
+        nameBolusPreset6 = p.getString(c.getString(R.string.key_nameBolusPresetP6), "");
+        nameBolusPreset7 = p.getString(c.getString(R.string.key_nameBolusPresetP7), "");
+        nameBolusPreset8 = p.getString(c.getString(R.string.key_nameBolusPresetP8), "");
 
         // urchin
         urchinEnable = getBoolean(c, p, R.string.key_urchinEnable, R.bool.default_urchinEnable);
@@ -697,6 +701,14 @@ public class DataStore extends RealmObject {
 
     public void setNightscoutPumpCleanFrom(long nightscoutPumpCleanFrom) {
         this.nightscoutPumpCleanFrom = nightscoutPumpCleanFrom;
+    }
+
+    public long getNightscoutCleanTimestamp() {
+        return nightscoutCleanTimestamp;
+    }
+
+    public void setNightscoutCleanTimestamp(long nightscoutCleanTimestamp) {
+        this.nightscoutCleanTimestamp = nightscoutCleanTimestamp;
     }
 
     public long getNightscoutAlwaysUpdateTimestamp() {
@@ -1243,6 +1255,10 @@ public class DataStore extends RealmObject {
         return nsEnableFormatHTML;
     }
 
+    public boolean isNsEnableMedtronicTrendStyle() {
+        return nsEnableMedtronicTrendStyle;
+    }
+
     public boolean isUrchinEnable() {
         return urchinEnable;
     }
@@ -1303,140 +1319,170 @@ public class DataStore extends RealmObject {
         return urchinStatusLayout;
     }
 
+    // NS rest api does not like dots as part of a basal pattern name and will cause a server error
+    private String scrub(String s) {
+        s = s.replace(".", " ");
+        return s;
+    }
+
     public String getNameBasalPattern1() {
-        return nameBasalPattern1;
+        return scrub(nameBasalPattern1.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBasalPatternP1) : nameBasalPattern1);
     }
 
     public String getNameBasalPattern2() {
-        return nameBasalPattern2;
+        return scrub(nameBasalPattern2.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBasalPatternP2) : nameBasalPattern2);
     }
 
     public String getNameBasalPattern3() {
-        return nameBasalPattern3;
+        return scrub(nameBasalPattern3.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBasalPatternP3) : nameBasalPattern3);
     }
 
     public String getNameBasalPattern4() {
-        return nameBasalPattern4;
+        return scrub(nameBasalPattern4.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBasalPatternP4) : nameBasalPattern4);
     }
 
     public String getNameBasalPattern5() {
-        return nameBasalPattern5;
+        return scrub(nameBasalPattern5.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBasalPatternP5) : nameBasalPattern5);
     }
 
     public String getNameBasalPattern6() {
-        return nameBasalPattern6;
+        return scrub(nameBasalPattern6.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBasalPatternP6) : nameBasalPattern6);
     }
 
     public String getNameBasalPattern7() {
-        return nameBasalPattern7;
+        return scrub(nameBasalPattern7.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBasalPatternP7) : nameBasalPattern7);
     }
 
     public String getNameBasalPattern8() {
-        return nameBasalPattern8;
+        return scrub(nameBasalPattern8.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBasalPatternP8) : nameBasalPattern8);
     }
 
     public String getNameTempBasalPreset1() {
-        return nameTempBasalPreset1;
+        return nameTempBasalPreset1.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameTempBasalPresetP1) : nameTempBasalPreset1;
     }
 
     public String getNameTempBasalPreset2() {
-        return nameTempBasalPreset2;
+        return nameTempBasalPreset2.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameTempBasalPresetP2) : nameTempBasalPreset2;
     }
 
     public String getNameTempBasalPreset3() {
-        return nameTempBasalPreset3;
+        return nameTempBasalPreset3.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameTempBasalPresetP3) : nameTempBasalPreset3;
     }
 
     public String getNameTempBasalPreset4() {
-        return nameTempBasalPreset4;
+        return nameTempBasalPreset4.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameTempBasalPresetP4) : nameTempBasalPreset4;
     }
 
     public String getNameTempBasalPreset5() {
-        return nameTempBasalPreset5;
+        return nameTempBasalPreset5.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameTempBasalPresetP5) : nameTempBasalPreset5;
     }
 
     public String getNameTempBasalPreset6() {
-        return nameTempBasalPreset6;
+        return nameTempBasalPreset6.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameTempBasalPresetP6) : nameTempBasalPreset6;
     }
 
     public String getNameTempBasalPreset7() {
-        return nameTempBasalPreset7;
+        return nameTempBasalPreset7.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameTempBasalPresetP7) : nameTempBasalPreset7;
     }
 
     public String getNameTempBasalPreset8() {
-        return nameTempBasalPreset8;
+        return nameTempBasalPreset8.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameTempBasalPresetP8) : nameTempBasalPreset8;
     }
 
     public String getNameBolusPreset1() {
-        return nameBolusPreset1;
+        return nameBolusPreset1.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBolusPresetP1) : nameBolusPreset1;
     }
 
     public String getNameBolusPreset2() {
-        return nameBolusPreset2;
+        return nameBolusPreset2.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBolusPresetP2) : nameBolusPreset2;
     }
 
     public String getNameBolusPreset3() {
-        return nameBolusPreset3;
+        return nameBolusPreset3.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBolusPresetP3) : nameBolusPreset3;
     }
 
     public String getNameBolusPreset4() {
-        return nameBolusPreset4;
+        return nameBolusPreset4.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBolusPresetP4) : nameBolusPreset4;
     }
 
     public String getNameBolusPreset5() {
-        return nameBolusPreset5;
+        return nameBolusPreset5.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBolusPresetP5) : nameBolusPreset5;
     }
 
     public String getNameBolusPreset6() {
-        return nameBolusPreset6;
+        return nameBolusPreset6.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBolusPresetP6) : nameBolusPreset6;
     }
 
     public String getNameBolusPreset7() {
-        return nameBolusPreset7;
+        return nameBolusPreset7.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBolusPresetP7) : nameBolusPreset7;
     }
 
     public String getNameBolusPreset8() {
-        return nameBolusPreset8;
+        return nameBolusPreset8.isEmpty() ?
+                FormatKit.getInstance().getString(R.string.default_nameBolusPresetP8) : nameBolusPreset8;
     }
 
     public String getNameBasalPattern(int value) {
         switch (value) {
-            case 1: return nameBasalPattern1;
-            case 2: return nameBasalPattern2;
-            case 3: return nameBasalPattern3;
-            case 4: return nameBasalPattern4;
-            case 5: return nameBasalPattern5;
-            case 6: return nameBasalPattern6;
-            case 7: return nameBasalPattern7;
-            case 8: return nameBasalPattern8;
+            case 1: return getNameBasalPattern1();
+            case 2: return getNameBasalPattern2();
+            case 3: return getNameBasalPattern3();
+            case 4: return getNameBasalPattern4();
+            case 5: return getNameBasalPattern5();
+            case 6: return getNameBasalPattern6();
+            case 7: return getNameBasalPattern7();
+            case 8: return getNameBasalPattern8();
         }
         return "";
     }
 
     public String getNameTempBasalPreset(int value) {
         switch (value) {
-            case 1: return nameTempBasalPreset1;
-            case 2: return nameTempBasalPreset2;
-            case 3: return nameTempBasalPreset3;
-            case 4: return nameTempBasalPreset4;
-            case 5: return nameTempBasalPreset5;
-            case 6: return nameTempBasalPreset6;
-            case 7: return nameTempBasalPreset7;
-            case 8: return nameTempBasalPreset8;
+            case 1: return getNameTempBasalPreset1();
+            case 2: return getNameTempBasalPreset2();
+            case 3: return getNameTempBasalPreset3();
+            case 4: return getNameTempBasalPreset4();
+            case 5: return getNameTempBasalPreset5();
+            case 6: return getNameTempBasalPreset6();
+            case 7: return getNameTempBasalPreset7();
+            case 8: return getNameTempBasalPreset8();
         }
         return "";
     }
 
     public String getNameBolusPreset(int value) {
         switch (value) {
-            case 1: return nameBolusPreset1;
-            case 2: return nameBolusPreset2;
-            case 3: return nameBolusPreset3;
-            case 4: return nameBolusPreset4;
-            case 5: return nameBolusPreset5;
-            case 6: return nameBolusPreset6;
-            case 7: return nameBolusPreset7;
-            case 8: return nameBolusPreset8;
+            case 1: return getNameBolusPreset1();
+            case 2: return getNameBolusPreset2();
+            case 3: return getNameBolusPreset3();
+            case 4: return getNameBolusPreset4();
+            case 5: return getNameBolusPreset5();
+            case 6: return getNameBolusPreset6();
+            case 7: return getNameBolusPreset7();
+            case 8: return getNameBolusPreset8();
         }
         return "";
     }

@@ -380,12 +380,18 @@ public class PumpHistoryHandler {
         return new SystemEvent(status);
     }
 
+    public SystemEvent systemEvent() {
+        return new SystemEvent();
+    }
+
     public class SystemEvent {
         PumpHistorySystem.STATUS status;
         Date eventDate;
         Date startDate;
         String key;
         RealmList<String> data;
+
+        public SystemEvent () {}
 
         public SystemEvent (PumpHistorySystem.STATUS status) {
             this.status = status;
@@ -459,13 +465,59 @@ public class PumpHistoryHandler {
                     }
                 });
             }
-
             return this;
         }
 
         public void closeHandler() {
             close();
         }
+
+        public SystemEvent dismiss(PumpHistorySystem.STATUS status, final String senderID) {
+            // dismiss pending unsent status events for selected sender
+            RealmResults<PumpHistorySystem> results = historyRealm
+                    .where(PumpHistorySystem.class)
+                    .equalTo("status", status.value())
+                    .contains("senderREQ", senderID)
+                    .findAll();
+            if (results.size() > 0) {
+                Log.d(TAG, String.format("SystemEvent dismiss: %s senderID = %s count = %s",
+                        status.name(), senderID, results.size()));
+                for (PumpHistorySystem record : results) {
+                    final PumpHistorySystem r = record;
+                    historyRealm.executeTransaction(new Realm.Transaction() {
+                        @Override
+                        public void execute(@NonNull Realm realm) {
+                            r.setSenderREQ(r.getSenderREQ().replace(senderID, ""));
+                        }
+                    });
+                }
+            }
+            return this;
+        }
+
+        public SystemEvent dismiss(PumpHistorySystem.STATUS status) {
+            // dismiss pending unsent status events for all associated senders
+            RealmResults<PumpHistorySystem> results = historyRealm
+                    .where(PumpHistorySystem.class)
+                    .equalTo("status", status.value())
+                    .notEqualTo("senderREQ", "")
+                    .findAll();
+            if (results.size() > 0) {
+                Log.d(TAG, String.format("SystemEvent dismiss: %s count = %s",
+                        status.name(), results.size()));
+                for (PumpHistorySystem record : results) {
+                    final PumpHistorySystem r = record;
+                    historyRealm.executeTransaction(new Realm.Transaction() {
+                        @Override
+                        public void execute(@NonNull Realm realm) {
+                            r.setSenderREQ("");
+                        }
+                    });
+                }
+            }
+            return this;
+        }
+
     }
 
     public void debugNote(final String note) {
@@ -656,8 +708,13 @@ public class PumpHistoryHandler {
         // already processed?
         boolean processed = cgmResults.size() > 0 && cgmResults.first().getCgmRTC() == rtc;
 
-        // cgm gap?
-        boolean gap = cgmResults.size() > 0 && date.getTime() - cgmResults.first().getEventDate().getTime() > 9 * 60 * 1000L;
+        boolean gap = false;
+        if (cgmResults.size() > 0 &&
+                date.getTime() - cgmResults.first().getEventDate().getTime() > 9 * 60000L)
+            gap = true;
+        else if (cgmResults.size() > 1 && !cgmResults.first().isHistory()
+                && cgmResults.first().getEventDate().getTime() - cgmResults.get(1).getEventDate().getTime() > 9 * 60000L)
+            gap = true;
 
         // cgm is available do we need the backfill?
         if (dataStore.isSysEnableCgmHistory()) {
@@ -735,14 +792,14 @@ public class PumpHistoryHandler {
                         sensormin = miscResults.first().getEventDate().getTime() + dataStore.getSysReportISIGnewsensor() * 60000L;
                     }
 
-                    if (sgv <= 70 || sensormin > now || min > now) {
+                    if (sgv <= 75 || sensormin > now || min > now) {
                         backfill = true;
                         isig = true;
 
                         if (!estimate) {
                             UserLogMessage.send(mContext, UserLogMessage.TYPE.HISTORY,
                                     String.format("{id;%s}: {id;%s}", R.string.ul_history__history, R.string.ul_history__report_isig));
-                            if (sgv <= 70) {
+                            if (sgv <= 75) {
                                 storeRealm.executeTransaction(new Realm.Transaction() {
                                     @Override
                                     public void execute(@NonNull Realm realm) {
@@ -876,6 +933,16 @@ public class PumpHistoryHandler {
 
             if (optEst) {
 
+                RealmResults<HistorySegment> results = historyRealm
+                        .where(HistorySegment.class)
+                        .equalTo("historyType", HISTORY_PUMP)
+                        .sort("toDate", Sort.DESCENDING)
+                        .findAll();
+                if (results.size() == 0) return;
+
+                // only consider cgm results up to this date as pump history may be stale
+                Date sessionEndDate = new Date (results.first().getToDate().getTime() + 6 * 60 * 60000L);
+
                 Date sensorStartDate = new Date(System.currentTimeMillis());
 
                 // viable sensor records
@@ -971,6 +1038,7 @@ public class PumpHistoryHandler {
                         .equalTo("noisyData", false)
                         .in("sensorException", exceptions)
                         .greaterThan("cgmRTC", calStartRTC)
+                        .lessThan("eventDate", sessionEndDate)
                         .sort("cgmRTC", Sort.ASCENDING)
                         .findAll();
 
@@ -1264,9 +1332,9 @@ public class PumpHistoryHandler {
                     ));
                 }
 
-                // discard estimate if out of range
-                if (estsgv < 40 || estsgv > 500)
-                    estsgv = 0;
+                // limit estimate result when out of range (same as pump)
+                if (estsgv > 0 && estsgv < 40) estsgv = 40;
+                else if (estsgv > 400) estsgv = 400;
 
                 if (!est && sgv == 0) {
                     int finalEstimate = (int) Math.round(estsgv);
@@ -1292,13 +1360,17 @@ public class PumpHistoryHandler {
                             && System.currentTimeMillis() - calCgmRecords.get(i).getEventDate().getTime() < 20 * 60000L) {
 
                         UserLogMessage.sendN(mContext, UserLogMessage.TYPE.ESTIMATE,
-                                String.format("estimated SGV {sgv;%s} at {time.sgv;%s}",
+                                String.format("{id;%s} {sgv;%s} {id;%s} {time.sgv;%s}",
+                                        R.string.ul_poll__estimated_sgv,
                                         finalEstimate,
+                                        R.string.ul_poll__reading_time__at,
                                         calCgmRecords.get(i).getEventDate().getTime()
                                 ));
                         UserLogMessage.sendE(mContext, UserLogMessage.TYPE.ESTIMATE,
-                                String.format("estimated SGV {sgv;%s} at {time.sgv.e;%s}",
+                                String.format("{id;%s} {sgv;%s} {id;%s} {time.sgv.e;%s}",
+                                        R.string.ul_poll__estimated_sgv,
                                         finalEstimate,
+                                        R.string.ul_poll__reading_time__at,
                                         calCgmRecords.get(i).getEventDate().getTime()
                                 ));
 
@@ -1379,11 +1451,13 @@ public class PumpHistoryHandler {
                 eventDate = cgmResults.first().getEventDate();
                 int cgmRTC = cgmResults.first().getCgmRTC() - 60;
                 int pos = 0;
+                int loc = 0;
                 while (pos < max && pos < cgmResults.size()) {
                     if (cgmResults.get(pos).getCgmRTC() > cgmRTC - (pos * 300)) {
                         isig.add(cgmResults.get(pos).getIsig());
                         delta.add(0.0);
-                        if (pos > 0) delta.set(pos - 1, isig.get(pos - 1) - isig.get(pos));
+                        if (loc > 0) delta.set(loc - 1, isig.get(loc - 1) - isig.get(loc));
+                        loc++;
                     }
                     pos++;
                 }
@@ -1678,7 +1752,7 @@ public class PumpHistoryHandler {
                 }
             });
             if (dataStore.isSysEnableCgmHistory())
-                limited |= updateHistorySegments(cnlReader, dataStore.getSysCgmHistoryDays(), oldest, newest, HISTORY_CGM, true, "CGM history:", mContext.getString(R.string.ul_history__cgm_history));
+                limited |= updateHistorySegments(cnlReader, dataStore.getSysCgmHistoryDays(), oldest, newest, HISTORY_CGM, true, "CGM history:", R.string.ul_history__cgm_history);
 
             // process sgv estimate / isig now as cgm data is available, avoids any comms errors after this
             isigAvailable();
@@ -1694,7 +1768,7 @@ public class PumpHistoryHandler {
                     }
                 });
                 if (dataStore.isSysEnablePumpHistory())
-                    limited |= updateHistorySegments(cnlReader, dataStore.getSysPumpHistoryDays(), oldest, newest, HISTORY_PUMP, pullPUMP, "PUMP history:", mContext.getString(R.string.ul_history__pump_history));
+                    limited |= updateHistorySegments(cnlReader, dataStore.getSysPumpHistoryDays(), oldest, newest, HISTORY_PUMP, pullPUMP, "PUMP history:", R.string.ul_history__pump_history);
             }
             else limited = dataStore.isSysEnablePumpHistory();
 
@@ -1708,7 +1782,7 @@ public class PumpHistoryHandler {
                 }
             });
             if (dataStore.isSysEnablePumpHistory())
-                limited |= updateHistorySegments(cnlReader, dataStore.getSysPumpHistoryDays(), oldest, newest, HISTORY_PUMP, pullPUMP, "PUMP history:", mContext.getString(R.string.ul_history__pump_history));
+                limited |= updateHistorySegments(cnlReader, dataStore.getSysPumpHistoryDays(), oldest, newest, HISTORY_PUMP, pullPUMP, "PUMP history:", R.string.ul_history__pump_history);
 
             // first run has a tendency for the pump to be busy and cause a comms error
             // only do a single pass when no recent history
@@ -1721,7 +1795,7 @@ public class PumpHistoryHandler {
                     }
                 });
                 if (dataStore.isSysEnableCgmHistory())
-                    limited |= updateHistorySegments(cnlReader, dataStore.getSysCgmHistoryDays(), oldest, newest, HISTORY_CGM, false, "CGM history:", mContext.getString(R.string.ul_history__cgm_history));
+                    limited |= updateHistorySegments(cnlReader, dataStore.getSysCgmHistoryDays(), oldest, newest, HISTORY_CGM, false, "CGM history:", R.string.ul_history__cgm_history);
             }
             else limited = dataStore.isSysEnableCgmHistory();
 
@@ -1731,7 +1805,7 @@ public class PumpHistoryHandler {
         return limited;
     }
 
-    private boolean updateHistorySegments(MedtronicCnlReader cnlReader, int days, final long oldest, final long newest, final byte historyType, boolean pullHistory, String logTAG, String userlogTAG)
+    private boolean updateHistorySegments(MedtronicCnlReader cnlReader, int days, final long oldest, final long newest, final byte historyType, boolean pullHistory, String logTAG, int userlogTAG)
             throws EncryptionException, IOException, ChecksumException, TimeoutException, UnexpectedMessageException, IntegrityException {
 
         boolean limited = false;
@@ -1856,9 +1930,9 @@ public class PumpHistoryHandler {
             ));
 
             UserLogMessage.sendN(mContext, UserLogMessage.TYPE.REQUESTED,
-                    String.format("%s {id;%s}", userlogTAG, R.string.ul_history__requested));
+                    String.format("{id;%s}: {id;%s}", userlogTAG, R.string.ul_history__requested));
             UserLogMessage.sendE(mContext, UserLogMessage.TYPE.REQUESTED,
-                    String.format("%s {id;%s}\n   {time.hist.e;%s} - {time.hist.e;%s}",
+                    String.format("{id;%s}: {id;%s}\n   {time.hist.e;%s} - {time.hist.e;%s}",
                             userlogTAG, R.string.ul_history__requested, start, end));
 
             Date[] range;
@@ -1896,7 +1970,7 @@ public class PumpHistoryHandler {
                     range[1] == null ? "null" : dateFormatter.format(range[1])));
 
             UserLogMessage.sendE(mContext, UserLogMessage.TYPE.RECEIVED,
-                    String.format("%s {id;%s}\n   {time.hist.e;%s} - {time.hist.e;%s}",
+                    String.format("{id;%s}: {id;%s}\n   {time.hist.e;%s} - {time.hist.e;%s}",
                             userlogTAG, R.string.ul_history__received,
                             range[0] == null ? 0 : range[0].getTime(),
                             range[1] == null ? 0 : range[1].getTime()));

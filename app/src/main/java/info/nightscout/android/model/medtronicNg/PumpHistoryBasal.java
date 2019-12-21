@@ -218,7 +218,7 @@ public class PumpHistoryBasal extends RealmObject implements PumpHistoryInterfac
                                 FormatKit.getInstance().formatAsInsulin(rate),
                         FormatKit.getInstance().getString(R.string.text__duration),
                         FormatKit.getInstance().formatMinutesAsHM(programmedDuration),
-                        completed & !canceled ? String.format(" (%s)",
+                        completed && !canceled ? String.format(" (%s)",
                                 FormatKit.getInstance().getString(R.string.text__completed)) : "");
                 break;
 
@@ -243,7 +243,7 @@ public class PumpHistoryBasal extends RealmObject implements PumpHistoryInterfac
         messageItems.add(new MessageItem()
                 .type(type)
                 .date(eventDate)
-                .clock(FormatKit.getInstance().formatAsClock(eventDate.getTime()).replace(" ", ""))
+                .clock(FormatKit.getInstance().formatAsClock(eventDate.getTime()))
                 .title(title)
                 .message(message));
 

@@ -55,6 +55,7 @@ import static info.nightscout.android.medtronic.service.MedtronicCnlService.POLL
 import static info.nightscout.android.medtronic.service.MedtronicCnlService.POLL_PRE_GRACE_PERIOD_MS;
 import static info.nightscout.android.medtronic.service.MedtronicCnlService.POLL_RECOVERY_PERIOD_MS;
 import static info.nightscout.android.medtronic.service.MedtronicCnlService.POLL_WARMUP_PERIOD_MS;
+import static info.nightscout.android.medtronic.service.MedtronicCnlService.USB_WARMUP_TIME_MS;
 import static info.nightscout.android.utils.ToolKit.getWakeLock;
 import static info.nightscout.android.utils.ToolKit.releaseWakeLock;
 
@@ -139,12 +140,18 @@ public class MasterService extends Service {
             intentFilter.addAction(Intent.ACTION_BATTERY_LOW);
             intentFilter.addAction(Intent.ACTION_BATTERY_CHANGED);
             intentFilter.addAction(Intent.ACTION_BATTERY_OKAY);
+            intentFilter.addAction(Intent.ACTION_POWER_CONNECTED);
+            intentFilter.addAction(Intent.ACTION_POWER_DISCONNECTED);
 
             intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
             intentFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
             intentFilter.addAction(Constants.ACTION_USB_ACTIVITY);
             intentFilter.addAction(Constants.ACTION_USB_PERMISSION);
             intentFilter.addAction(Constants.ACTION_NO_USB_PERMISSION);
+
+            intentFilter.addAction(Intent.ACTION_LOCALE_CHANGED);
+            intentFilter.addAction(Intent.ACTION_TIME_CHANGED);
+            intentFilter.addAction(Intent.ACTION_DATE_CHANGED);
 
             registerReceiver(masterServiceReceiver, intentFilter);
 
@@ -291,7 +298,7 @@ public class MasterService extends Service {
                     setHeartbeatAlarm();
                     runUploadServices();
                     if (checkUsbDevice()) {
-                        if (hasUsbPermission()) startCgmService();
+                        if (hasUsbPermission()) startCgmServiceDelayed(USB_WARMUP_TIME_MS);
                         else usbNoPermission();
                     }
                     break;
@@ -309,8 +316,7 @@ public class MasterService extends Service {
 
                 case Constants.ACTION_READ_NOW:
                     UserLogMessage.send(mContext, R.string.ul_main__requesting_poll_now);
-                    startService(new Intent(mContext, MedtronicCnlService.class)
-                            .setAction(MasterService.Constants.ACTION_CNL_READPUMP));
+                    setPollingAlarm(System.currentTimeMillis() + 1000L);
                     break;
 
                 case Constants.ACTION_READ_PROFILE:
@@ -328,8 +334,7 @@ public class MasterService extends Service {
                 case Constants.ACTION_READ_OVERDUE:
                     if (isUsbOperational()
                             && System.currentTimeMillis() - lastPollSuccess() > POLL_PERIOD_MS) {
-                        startService(new Intent(mContext, MedtronicCnlService.class)
-                                .setAction(MasterService.Constants.ACTION_CNL_READPUMP));
+                        setPollingAlarm(System.currentTimeMillis() + USB_WARMUP_TIME_MS);
                     }
                     break;
 
@@ -341,6 +346,9 @@ public class MasterService extends Service {
                     startService(new Intent(mContext, UrchinService.class).setAction("update"));
                     break;
 
+                case Intent.ACTION_LOCALE_CHANGED:
+                case Intent.ACTION_TIME_CHANGED:
+                case Intent.ACTION_DATE_CHANGED:
                 case Constants.ACTION_STATUS_UPDATE:
                     statusNotification.updateNotification();
                     break;
@@ -357,6 +365,17 @@ public class MasterService extends Service {
                 case Intent.ACTION_BATTERY_CHANGED:
                 case Intent.ACTION_BATTERY_OKAY:
                     updateUploaderBattery(intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1));
+                    break;
+                case Intent.ACTION_POWER_CONNECTED:
+                    new PumpHistoryHandler(mContext).systemEvent()
+                            .dismiss(PumpHistorySystem.STATUS.UPLOADER_BATTERY_VERYLOW)
+                            .dismiss(PumpHistorySystem.STATUS.UPLOADER_BATTERY_LOW)
+                            .closeHandler();
+                    break;
+                case Intent.ACTION_POWER_DISCONNECTED:
+                    new PumpHistoryHandler(mContext).systemEvent()
+                            .dismiss(PumpHistorySystem.STATUS.UPLOADER_BATTERY_FULL)
+                            .closeHandler();
                     break;
 
                 // received from UsbActivity
@@ -552,6 +571,8 @@ public class MasterService extends Service {
                         > (100 - batteryUpdateLastLevel) / (100 - uploaderBatteryVeryLow)) {
 
                     new PumpHistoryHandler(this).systemEvent(PumpHistorySystem.STATUS.UPLOADER_BATTERY_VERYLOW)
+                            .dismiss(PumpHistorySystem.STATUS.UPLOADER_BATTERY_VERYLOW)
+                            .dismiss(PumpHistorySystem.STATUS.UPLOADER_BATTERY_LOW)
                             .data(level)
                             .process()
                             .closeHandler();
@@ -561,6 +582,8 @@ public class MasterService extends Service {
                         > (100 - batteryUpdateLastLevel) / (100 - uploaderBatteryLow)) {
 
                     new PumpHistoryHandler(this).systemEvent(PumpHistorySystem.STATUS.UPLOADER_BATTERY_LOW)
+                            .dismiss(PumpHistorySystem.STATUS.UPLOADER_BATTERY_VERYLOW)
+                            .dismiss(PumpHistorySystem.STATUS.UPLOADER_BATTERY_LOW)
                             .data(level)
                             .process()
                             .closeHandler();
@@ -569,6 +592,7 @@ public class MasterService extends Service {
                 } else if (level == 100 && level > batteryUpdateLastLevel) {
 
                     new PumpHistoryHandler(this).systemEvent(PumpHistorySystem.STATUS.UPLOADER_BATTERY_FULL)
+                            .dismiss(PumpHistorySystem.STATUS.UPLOADER_BATTERY_FULL)
                             .data(level)
                             .process()
                             .closeHandler();
@@ -699,7 +723,7 @@ public class MasterService extends Service {
         if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_USB_HOST)) {
             Log.e(TAG, "Device does not support USB OTG");
             statusNotification.updateNotification(StatusNotification.NOTIFICATION.ERROR);
-            UserLogMessage.send(mContext, UserLogMessage.TYPE.WARN, getString(R.string.ul_usb__no_support));
+            UserLogMessage.send(mContext, UserLogMessage.TYPE.WARN, R.string.ul_usb__no_support);
             return false;
         }
 
@@ -708,14 +732,14 @@ public class MasterService extends Service {
         if (usbManager == null) {
             Log.e(TAG, "USB connection error. mUsbManager == null");
             statusNotification.updateNotification(StatusNotification.NOTIFICATION.ERROR);
-            UserLogMessage.send(mContext, UserLogMessage.TYPE.WARN, getString(R.string.ul_usb__no_connection));
+            UserLogMessage.send(mContext, UserLogMessage.TYPE.WARN, R.string.ul_usb__no_connection);
             return false;
         }
 
         if (UsbHidDriver.getUsbDevice(usbManager, MedtronicCnlService.USB_VID, MedtronicCnlService.USB_PID) == null) {
             Log.w(TAG, "USB connection error. Is the CNL plugged in?");
             statusNotification.updateNotification(StatusNotification.NOTIFICATION.ERROR);
-            UserLogMessage.send(mContext, UserLogMessage.TYPE.WARN, getString(R.string.ul_usb__no_connection));
+            UserLogMessage.send(mContext, UserLogMessage.TYPE.WARN, R.string.ul_usb__no_connection);
             return false;
         }
 

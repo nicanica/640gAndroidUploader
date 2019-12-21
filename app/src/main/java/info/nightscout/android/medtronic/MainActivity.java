@@ -9,6 +9,7 @@ import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Point;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
@@ -40,6 +41,7 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -98,6 +100,7 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
     private long chartTimeOffset;
 
     private long chartChangeTimestamp;
+    private boolean chartLargeMode;
 
     private boolean landscape;
 
@@ -109,6 +112,7 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
 
     private Toast toast;
 
+    private Handler mUiRealmHandler = new Handler();
     private Handler mUiRefreshHandler = new Handler();
     private Runnable mUiRefreshRunnable = new RefreshDisplayRunnable();
 
@@ -179,9 +183,12 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
 
             // v0.7.0 changed minimum backfill period to 7 days
             if (mPrefs.getString(getString(R.string.key_sysCgmHistoryDays), "").equals("1"))
-                mPrefs.edit().putString(getString(R.string.key_sysCgmHistoryDays), "7").apply();
+                mPrefs.edit().putString(getString(R.string.key_sysCgmHistoryDays), getString(R.string.default_sysCgmHistoryDays)).apply();
             if (mPrefs.getString(getString(R.string.key_sysPumpHistoryDays), "").equals("1"))
-                mPrefs.edit().putString(getString(R.string.key_sysPumpHistoryDays), "7").apply();
+                mPrefs.edit().putString(getString(R.string.key_sysPumpHistoryDays), getString(R.string.default_sysPumpHistoryDays)).apply();
+            // v0.7.0 removed "Events Only" option, changed default from "90" to "60"
+            if (mPrefs.getString(getString(R.string.key_sysPumpHistoryFrequency), "").equals("0"))
+                mPrefs.edit().putString(getString(R.string.key_sysPumpHistoryFrequency), getString(R.string.default_sysPumpHistoryFrequency)).apply();
         }
 
         storeRealm.executeTransaction(new Realm.Transaction() {
@@ -300,7 +307,7 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
                                 if (dataStore.isNsEnableProfileUpload()) {
                                     sendBroadcast(new Intent(MasterService.Constants.ACTION_READ_PROFILE));
                                 } else {
-                                    UserLogMessage.getInstance().add(getString(R.string.ul_main__pump_profile_disabled));
+                                    UserLogMessage.getInstance().add(R.string.ul_main__pump_profile_disabled);
                                 }
                             } else {
                                 UserLogMessage.getInstance().add(R.string.ul_main__cgm_service_disabled);
@@ -320,6 +327,8 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
 
         chartZoom = Integer.parseInt(mPrefs.getString("chartZoom", "3"));
 
+        chartLargeMode = landscape;
+
         mChart = findViewById(R.id.chart);
 
         // disable scrolling at the moment
@@ -332,7 +341,7 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
 
         mChart.getGridLabelRenderer().setNumHorizontalLabels(6);
 
-        float factor = landscape ? 1.2f : 1.0f;
+        float factor = chartLargeMode ? 1.2f : 1.0f;
         float pixels = dipToPixels(getApplicationContext(), 12 * factor);
         mChart.getGridLabelRenderer().setTextSize(pixels);
         mChart.getGridLabelRenderer().setLabelHorizontalHeight((int) (pixels * 0.65));
@@ -345,7 +354,7 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
                     public String formatLabel(double value, boolean isValueX) {
                         if (!isValueX)
                             return FormatKit.getInstance().formatAsGlucose((int) value);
-                        else if (landscape)
+                        else if (chartLargeMode)
                             return FormatKit.getInstance().formatAsClock((long) value);
                         else
                             return FormatKit.getInstance().formatAsClockNoAmPm((long) value);
@@ -389,6 +398,14 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
                 chartViewAdjusted();
             }
 
+        });
+
+        mChart.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                Log.d(TAG, "onLayoutChange called");
+                refreshDisplayChart();
+            }
         });
 
         findViewById(R.id.view_sgv).setOnClickListener(new View.OnClickListener()
@@ -458,13 +475,20 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
     private Toast serveToast(SpannableStringBuilder ssb, Toast toast, View v) {
         if (toast != null) toast.cancel();
 
-        toast = Toast.makeText(mContext, ssb, Toast.LENGTH_SHORT);
+        toast = Toast.makeText(mContext, ssb, Toast.LENGTH_LONG);
 
-        View parent = (View) v.getParent();
-        int parentHeight = parent.getHeight();
-        int yOffset = (parentHeight / 2) - (v.getTop() + ((v.getBottom() - v.getTop()) / 2));
+        WindowManager wm = (WindowManager) getApplicationContext().getSystemService(Context.WINDOW_SERVICE);
+        Point screen_size = new Point();
+        wm.getDefaultDisplay().getSize(screen_size);
 
-        toast.setGravity(Gravity.NO_GRAVITY, 0, -yOffset);
+        int[] coords = {0,0};
+        v.getLocationOnScreen(coords);
+
+        toast.setGravity(Gravity.NO_GRAVITY,
+                coords[0] + (v.getWidth() / 2) - (screen_size.x / 2),
+                coords[1] + (v.getHeight() / 2) - (screen_size.y / 2)
+        );
+
         toast.show();
         return toast;
     }
@@ -568,7 +592,7 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
         openRealmHistory();
         openRealmDatastore();
 
-        checkForUpdateBackground(5);
+        checkForUpdateBackground(10);
 
         startDisplay();
         if (userLogDisplay != null)
@@ -656,6 +680,12 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
         return true;
     }
 
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        Log.d(TAG, "onConfigurationChanged called");
+        super.onConfigurationChanged(newConfig);
+    }
+
     synchronized private void openRealmDefault() {
         if (mRealm == null)
             mRealm = Realm.getDefaultInstance();
@@ -699,6 +729,7 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
 
         appUpdater.setUpdateFrom(UpdateFrom.JSON)
                 .setUpdateJSON("https://raw.githubusercontent.com/pazaan/600SeriesAndroidUploader/master/app/update.json")
+                .showAppUpdated(false)
                 .showEvery(checkEvery) // Only check for an update every `checkEvery` invocations
                 .start();
     }
@@ -738,12 +769,6 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
                                 R.string.ul_main__auto_mode_update,
                                 R.plurals.minutes,
                                 historyFrequency
-                        ));
-            } else {
-                UserLogMessage.getInstance().add(UserLogMessage.TYPE.OPTION,
-                        String.format("{id;%s}: {id;%s}",
-                                R.string.ul_main__auto_mode_update,
-                                R.string.ul_main__events_only
                         ));
             }
 
@@ -789,7 +814,11 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
                     }
                 });
             }
-            startService(new Intent(this, MasterService.class));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(new Intent(this, MasterService.class));
+            } else {
+                startService(new Intent(this, MasterService.class));
+            }
         } else {
             mPrefs.edit().putBoolean("EnableCgmService", false).commit();
             Log.i(TAG, "startMasterService: CgmService is disabled");
@@ -1000,32 +1029,39 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
         if (displayCgmResults.size() > 0) {
             timeLastSGV = displayCgmResults.last().getEventDate().getTime();
             sgvString = FormatKit.getInstance().formatAsGlucose(displayCgmResults.last().getSgv(), false, true);
-
             String trend = displayCgmResults.last().getCgmTrend();
-            if (trend != null) {
-                switch (trend) {
-                    case "DOUBLE_UP":
+            if (displayCgmResults.last().isEstimate()) {
+                trendString = "{ion-ios-medical}";
+            } else if (trend != null) {
+                switch (PumpHistoryCGM.NS_TREND.valueOf(trend)) {
+                    case TRIPLE_UP:
+                        trendString = "{ion_ios_arrow_thin_up}{ion_ios_arrow_thin_up}{ion_ios_arrow_thin_up}";
+                        break;
+                    case DOUBLE_UP:
                         trendString = "{ion_ios_arrow_thin_up}{ion_ios_arrow_thin_up}";
                         break;
-                    case "SINGLE_UP":
+                    case SINGLE_UP:
                         trendString = "{ion_ios_arrow_thin_up}";
                         break;
-                    case "FOURTY_FIVE_UP":
+                    case FOURTY_FIVE_UP:
                         trendRotation = -45;
                         trendString = "{ion_ios_arrow_thin_right}";
                         break;
-                    case "FLAT":
+                    case FLAT:
                         trendString = "{ion_ios_arrow_thin_right}";
                         break;
-                    case "FOURTY_FIVE_DOWN":
+                    case FOURTY_FIVE_DOWN:
                         trendRotation = 45;
                         trendString = "{ion_ios_arrow_thin_right}";
                         break;
-                    case "SINGLE_DOWN":
+                    case SINGLE_DOWN:
                         trendString = "{ion_ios_arrow_thin_down}";
                         break;
-                    case "DOUBLE_DOWN":
+                    case DOUBLE_DOWN:
                         trendString = "{ion_ios_arrow_thin_down}{ion_ios_arrow_thin_down}";
+                        break;
+                    case TRIPLE_DOWN:
+                        trendString = "{ion_ios_arrow_thin_down}{ion_ios_arrow_thin_down}{ion_ios_arrow_thin_down}";
                         break;
                     default:
                         trendString = "{ion_ios_minus_empty}";
@@ -1096,12 +1132,25 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
 
     private void refreshDisplayChart() {
         Log.d(TAG, "refreshDisplayChart");
-        stopDisplayChart();
-        startDisplayChart();
+        if (historyRealm == null) return;
+        if (historyRealm.isInTransaction()) {
+            mUiRealmHandler.post(
+                    new Runnable() {
+                        @Override
+                        public void run() {
+                            stopDisplayChart();
+                            startDisplayChart();
+                        }
+                    });
+        } else {
+            stopDisplayChart();
+            startDisplayChart();
+        }
     }
 
     private void stopDisplayChart() {
         Log.d(TAG, "stopDisplayChart");
+        mUiRealmHandler.removeCallbacks(mUiRefreshRunnable);
         if (displayChartResults != null) {
             displayChartResults.removeAllChangeListeners();
             displayChartResults = null;
@@ -1110,6 +1159,7 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
 
     private void startDisplayChart() {
         Log.d(TAG, "startDisplayChart");
+        if (historyRealm == null) return;
 
         // reset if last chart interaction was over 5 mins
         if (System.currentTimeMillis() - chartChangeTimestamp > 5 * 60000L)
@@ -1134,6 +1184,22 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
     }
 
     private void updateChart(RealmResults<PumpHistoryCGM> results, long timestamp) {
+
+        int chartWidth = mChart.getWidth();
+        if (chartWidth > 0) {
+            float xdpi = getResources().getDisplayMetrics().xdpi;
+            boolean change = chartWidth / xdpi > 3;
+            if (change != chartLargeMode) {
+                Log.d(TAG, String.format("Chart large mode changed from %s to %s chartWidth = %s xdpi = %s",
+                        chartLargeMode, change, chartWidth, xdpi));
+                chartLargeMode = change;
+                float factor = chartLargeMode ? 1.2f : 1.0f;
+                float pixels = dipToPixels(getApplicationContext(), 12 * factor);
+                mChart.getGridLabelRenderer().setTextSize(pixels);
+                mChart.getGridLabelRenderer().setLabelHorizontalHeight((int) (pixels * 0.65));
+                mChart.getGridLabelRenderer().reloadStyles();
+            }
+        }
 
         // calc X & Y chart bounds with readable stepping for mmol & mg/dl
         // X needs offsetting as graphview will not always show points near edges
@@ -1243,7 +1309,7 @@ public class MainActivity extends AppCompatActivity implements OnSharedPreferenc
             sgvSeries.setCustomShape(new PointsGraphSeries.CustomShape() {
                 @Override
                 public void draw(Canvas canvas, Paint paint, float x, float y, DataPointInterface dataPoint) {
-                    float factor = landscape ? 1.3f : 1.0f;
+                    float factor = chartLargeMode ? 1.4f : 1.0f;
                     float dotSize;
                     double sgv = dataPoint.getY();
 
